@@ -1,0 +1,67 @@
+# Dataset Configuration
+data:
+  train_noisy_dir: "/kaggle/input/enhance-the-dark-world/archive/train/train"
+  train_gt_dir: "/kaggle/input/enhance-the-dark-world/archive/train/gt"
+  val_noisy_dir: "/kaggle/input/enhance-the-dark-world/archive/val/val"
+  val_gt_dir: "/kaggle/input/enhance-the-dark-world/archive/val/gt"
+  test_noisy_dir: "/kaggle/input/enhance-the-dark-world/archive/test"
+  batch_size: 8
+  num_workers: 4
+  pin_memory: true
+
+# Model Configuration
+model:
+  generator:
+    in_channels: 3
+    base_channels: 64
+    num_residual_blocks: 16
+    upscale_factor: 4
+  discriminator:
+    in_channels: 3
+    base_channels: 64
+    num_blocks: 8
+
+# Loss Configuration
+loss:
+  perceptual_weight: 1.0
+  adversarial_weight: 0.001
+  pixel_weight: 1.0  # For PSNR optimization
+  vgg_layer: 36  # conv5_4
+
+# Training Configuration
+training:
+  epochs: 100
+  pretrain_epochs: 50  # MSE-only pretraining
+  learning_rate: 1e-4
+  beta1: 0.9
+  beta2: 0.999
+  lr_decay_factor: 0.5
+  lr_decay_epochs: [30, 60, 90]
+  gradient_clip: 1.0
+  mixed_precision: true
+  
+# Checkpoint Configuration
+checkpoint:
+  save_dir: "./outputs/models"
+  save_frequency: 5
+  keep_last_n: 3
+
+# Logging Configuration
+logging:
+  log_dir: "./outputs/logs"
+  tensorboard: true
+  mlflow_tracking: true
+  mlflow_uri: "http://localhost:5000"
+  experiment_name: "SRGAN_LowLight"
+  log_images_frequency: 10
+
+# Validation Configuration
+validation:
+  frequency: 1
+  save_images: true
+  num_vis_samples: 4
+
+# Device Configuration
+device:
+  use_cuda: true
+  device_ids: [0]  # GPU IDs for DataParallel

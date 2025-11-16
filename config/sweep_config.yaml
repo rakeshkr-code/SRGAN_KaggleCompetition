@@ -1,0 +1,4 @@
+parameters:
+  batch_size: [8, 16]
+  learning_rate: [1e-4, 5e-5]
+  epochs: [50, 100]
