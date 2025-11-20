@@ -32,7 +32,7 @@ loss:
 training:
   epochs: 100
   pretrain_epochs: 50  # MSE-only pretraining
-  learning_rate: 1e-4
+  learning_rate: 1.0e-4
   beta1: 0.9
   beta2: 0.999
   lr_decay_factor: 0.5

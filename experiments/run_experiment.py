@@ -30,7 +30,8 @@ class Trainer:
         
         # Mixed precision training
         self.use_amp = config['training']['mixed_precision']
-        self.scaler = GradScaler() if self.use_amp else None
+        # self.scaler = GradScaler() if self.use_amp else None
+        self.scaler = GradScaler('cuda') if self.use_amp else None
         
         # Checkpoint management
         self.checkpoint_dir = config['checkpoint']['save_dir']
