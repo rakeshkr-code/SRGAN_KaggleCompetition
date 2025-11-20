@@ -13,13 +13,13 @@ data:
 model:
   generator:
     in_channels: 3
-    base_channels: 64
-    num_residual_blocks: 16
+    base_channels: 16   # 64
+    num_residual_blocks: 3  # 16
     upscale_factor: 4
   discriminator:
     in_channels: 3
-    base_channels: 64
-    num_blocks: 8
+    base_channels: 16 # 64
+    num_blocks: 4 # 8
 
 # Loss Configuration
 loss:
@@ -42,13 +42,15 @@ training:
   
 # Checkpoint Configuration
 checkpoint:
-  save_dir: "./outputs/models"
+  # save_dir: "./outputs/models"
+  save_dir: "/kaggle/working/SRGAN_KaggleCompetition/outputs/models"
   save_frequency: 5
   keep_last_n: 3
 
 # Logging Configuration
 logging:
-  log_dir: "./outputs/logs"
+  # log_dir: "./outputs/logs"
+  log_dir: "/kaggle/working/SRGAN_KaggleCompetition/outputs/logs"
   tensorboard: true
   mlflow_tracking: true
   mlflow_uri: "http://localhost:5000"
