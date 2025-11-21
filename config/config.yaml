@@ -5,6 +5,12 @@ data:
   val_noisy_dir: "/kaggle/input/enhance-the-dark-world/archive/val/val"
   val_gt_dir: "/kaggle/input/enhance-the-dark-world/archive/val/gt"
   test_noisy_dir: "/kaggle/input/enhance-the-dark-world/archive/test"
+
+  # train_noisy_dir: "../DATA_Nongitfolder/enhance-the-dark-world/archive/train/train"
+  # train_gt_dir: "../DATA_Nongitfolder/enhance-the-dark-world/archive/train/gt"
+  # val_noisy_dir: "../DATA_Nongitfolder/enhance-the-dark-world/archive/val/val"
+  # val_gt_dir: "../DATA_Nongitfolder/enhance-the-dark-world/archive/val/gt"
+  # test_noisy_dir: "../DATA_Nongitfolder/enhance-the-dark-world/archive/test"
   batch_size: 8
   num_workers: 4
   pin_memory: true

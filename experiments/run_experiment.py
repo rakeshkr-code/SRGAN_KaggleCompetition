@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 from typing import Dict, Optional
 import os
 from tqdm import tqdm
@@ -15,23 +15,36 @@ from src.utils.visualization import save_comparison
 
 class Trainer:
     """Trainer class for SRGAN"""
-    
+
     def __init__(self, config: Dict, logger: Logger, use_mlflow: bool = True):
         self.config = config
         self.logger = logger
         self.use_mlflow = use_mlflow
         
-        # Loss function
+        # Determine device
+        self.device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = torch.device(self.device_type)
+        
+        # Loss function - CREATE IT FIRST
         self.criterion = CombinedLoss(
             perceptual_weight=config['loss']['perceptual_weight'],
             adversarial_weight=config['loss']['adversarial_weight'],
-            pixel_weight=config['loss']['pixel_weight']
+            pixel_weight=config['loss']['pixel_weight'],
+            vgg_layer=config['loss']['vgg_layer']
         )
+        
+        # ✓ CRITICAL: Move loss to device
+        self.criterion.to(self.device)
         
         # Mixed precision training
         self.use_amp = config['training']['mixed_precision']
-        # self.scaler = GradScaler() if self.use_amp else None
-        self.scaler = GradScaler('cuda') if self.use_amp else None
+        
+        # Proper GradScaler initialization
+        if self.use_amp and self.device_type == 'cuda':
+            self.scaler = GradScaler(device='cuda')
+        else:
+            self.scaler = None
+            self.use_amp = False
         
         # Checkpoint management
         self.checkpoint_dir = config['checkpoint']['save_dir']
@@ -40,7 +53,9 @@ class Trainer:
         # Best model tracking
         self.best_psnr = 0.0
         self.best_epoch = 0
-    
+        
+        self.logger.info(f"Trainer initialized - Device: {self.device_type}, AMP: {self.use_amp}")
+
     def setup_optimizers(self, model):
         """Setup optimizers and schedulers"""
         gen_optimizer = optim.Adam(
@@ -87,15 +102,10 @@ class Trainer:
             # =============== Train Discriminator ===============
             disc_optimizer.zero_grad()
             
-            with autocast(enabled=self.use_amp):
-                # Generate SR images
+            with autocast(device_type=self.device_type, enabled=self.use_amp):
                 sr_images = model.generator(lr_images)
-                
-                # Discriminator predictions
                 disc_pred_real = model.discriminator(hr_images)
                 disc_pred_fake = model.discriminator(sr_images.detach())
-                
-                # Discriminator loss
                 d_loss, d_loss_dict = self.criterion.discriminator_loss(
                     disc_pred_real, disc_pred_fake
                 )
@@ -110,28 +120,20 @@ class Trainer:
             # =============== Train Generator ===============
             gen_optimizer.zero_grad()
             
-            with autocast(enabled=self.use_amp):
-                # Generate SR images again (with gradients)
+            with autocast(device_type=self.device_type, enabled=self.use_amp):
                 sr_images = model.generator(lr_images)
-                
-                # Discriminator prediction on fake images
                 disc_pred_fake = model.discriminator(sr_images)
-                
-                # Generator loss
                 g_loss, g_loss_dict = self.criterion.generator_loss(
                     sr_images, hr_images, disc_pred_fake
                 )
             
             if self.use_amp:
                 self.scaler.scale(g_loss).backward()
-                
-                # Gradient clipping
                 self.scaler.unscale_(gen_optimizer)
                 torch.nn.utils.clip_grad_norm_(
                     model.generator.parameters(),
                     self.config['training']['gradient_clip']
                 )
-                
                 self.scaler.step(gen_optimizer)
                 self.scaler.update()
             else:
@@ -150,14 +152,12 @@ class Trainer:
             total_d_loss += d_loss_dict['total_loss']
             total_psnr += psnr
             
-            # Update progress bar
             progress_bar.set_postfix({
                 'G_Loss': f"{g_loss_dict['total_loss']:.4f}",
                 'D_Loss': f"{d_loss_dict['total_loss']:.4f}",
                 'PSNR': f"{psnr:.2f}"
             })
         
-        # Average metrics
         num_batches = len(train_loader)
         metrics = {
             'generator_loss': total_g_loss / num_batches,
@@ -175,7 +175,6 @@ class Trainer:
         total_psnr = 0.0
         num_batches = 0
         
-        # Save visualization samples
         save_vis = (epoch % self.config['logging']['log_images_frequency'] == 0)
         vis_saved = False
         
@@ -183,15 +182,11 @@ class Trainer:
             lr_images = lr_images.to(model.device)
             hr_images = hr_images.to(model.device)
             
-            # Generate SR images
             sr_images = model.predict(lr_images)
-            
-            # Calculate PSNR
             psnr = batch_psnr(sr_images, hr_images)
             total_psnr += psnr
             num_batches += 1
             
-            # Save visualization
             if save_vis and not vis_saved:
                 vis_path = os.path.join(
                     self.config['logging']['log_dir'],
@@ -204,36 +199,29 @@ class Trainer:
                     mlflow.log_artifact(vis_path)
         
         avg_psnr = total_psnr / num_batches
-        
         return {'psnr': avg_psnr}
     
     def train(self, model, train_loader, val_loader):
         """Complete training loop"""
         self.logger.info("Starting training...")
         
-        # Setup optimizers
         gen_optimizer, disc_optimizer, gen_scheduler, disc_scheduler = \
             self.setup_optimizers(model)
         
-        # Training loop
         for epoch in range(1, self.config['training']['epochs'] + 1):
             self.logger.info(f"\n{'='*80}")
             self.logger.info(f"Epoch {epoch}/{self.config['training']['epochs']}")
             self.logger.info(f"{'='*80}")
             
-            # Train
             train_metrics = self.train_epoch(
                 model, train_loader, gen_optimizer, disc_optimizer, epoch
             )
-            
             self.logger.log_metrics(epoch, train_metrics, phase='train')
             
-            # Validate
             if epoch % self.config['validation']['frequency'] == 0:
                 val_metrics = self.validate(model, val_loader, epoch)
                 self.logger.log_metrics(epoch, val_metrics, phase='val')
                 
-                # Log to MLflow
                 if self.use_mlflow:
                     mlflow.log_metrics({
                         'train_g_loss': train_metrics['generator_loss'],
@@ -242,7 +230,6 @@ class Trainer:
                         'val_psnr': val_metrics['psnr']
                     }, step=epoch)
                 
-                # Save best model
                 if val_metrics['psnr'] > self.best_psnr:
                     self.best_psnr = val_metrics['psnr']
                     self.best_epoch = epoch
@@ -253,7 +240,6 @@ class Trainer:
                     })
                     self.logger.info(f"✓ New best model saved (PSNR: {self.best_psnr:.4f})")
             
-            # Save checkpoint
             if epoch % self.config['checkpoint']['save_frequency'] == 0:
                 checkpoint_path = os.path.join(
                     self.checkpoint_dir,
@@ -264,7 +250,6 @@ class Trainer:
                     'disc': disc_optimizer
                 })
             
-            # Update learning rates
             gen_scheduler.step()
             disc_scheduler.step()
         

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from typing import Tuple, Dict
 from torchvision.models import vgg19, VGG19_Weights
+from typing import Tuple, Dict
 
 
 class PerceptualLoss(nn.Module):
@@ -20,7 +20,7 @@ class PerceptualLoss(nn.Module):
         
         self.normalize_input = normalize_input
         
-        # VGG normalization parameters
+        # VGG normalization parameters (registered as buffers for device compatibility)
         self.register_buffer('mean', torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
         self.register_buffer('std', torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
     
@@ -28,7 +28,7 @@ class PerceptualLoss(nn.Module):
         """Normalize images for VGG"""
         # Denormalize from [-1, 1] to [0, 1]
         x = (x + 1) / 2
-        # Normalize with ImageNet stats
+        # Normalize with ImageNet stats (mean and std are already on same device as x)
         x = (x - self.mean) / self.std
         return x
     
@@ -49,16 +49,23 @@ class CombinedLoss(nn.Module):
     
     def __init__(self, perceptual_weight: float = 1.0, 
                  adversarial_weight: float = 0.001,
-                 pixel_weight: float = 1.0):
+                 pixel_weight: float = 1.0,
+                 vgg_layer: int = 36):
         super(CombinedLoss, self).__init__()
         
-        self.perceptual_loss = PerceptualLoss()
+        self.perceptual_loss = PerceptualLoss(layer_idx=vgg_layer)
         self.adversarial_loss = nn.BCEWithLogitsLoss()
         self.pixel_loss = nn.MSELoss()
         
         self.perceptual_weight = perceptual_weight
         self.adversarial_weight = adversarial_weight
         self.pixel_weight = pixel_weight
+    
+    def to(self, device):
+        """Override to method to ensure all components are moved to device"""
+        super().to(device)
+        self.perceptual_loss.to(device)
+        return self
     
     def generator_loss(self, sr_images: torch.Tensor, hr_images: torch.Tensor,
                       disc_pred_fake: torch.Tensor) -> Tuple[torch.Tensor, Dict]:
@@ -109,3 +116,4 @@ class CombinedLoss(nn.Module):
         }
         
         return total_loss, loss_dict
+
